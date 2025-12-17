@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { GameState, FigureInstance, BACTERIA_TEMPLATES, BOMB_TEMPLATE, GAME_CONFIG, LEVELS, LevelConfig } from './game-constants';
 import { playPlacementSound, playSuccessSound, playGameOverSound } from './sounds';
+import { offlineStorage } from './offline-storage';
 
 interface LevelProgressData {
   levelNumber: number;
@@ -116,20 +117,42 @@ function generateQueue(size: number, includesBomb: boolean = false): string[] {
   return queue;
 }
 
+function getInitialState() {
+  const localProgress = offlineStorage.getLevelProgress();
+  const localStats = offlineStorage.getPlayerStats();
+  const maxUnlocked = offlineStorage.getUnlockedLevels();
+  
+  const hasStoredData = localStats.lastUpdated > 0;
+  
+  return {
+    levelProgress: localProgress,
+    maxUnlockedLevel: Math.max(1, maxUnlocked),
+    highScore: localStats.highScore,
+    coins: hasStoredData ? localStats.coins : 500,
+    upgrades: {
+      bombCount: localStats.bombCount ?? 1,
+      figureSize: localStats.figureSize ?? 1,
+      queueSize: localStats.queueSize ?? 1,
+    },
+  };
+}
+
+const initialState = getInitialState();
+
 export const useGameStore = create<GameStore>((set, get) => ({
   gameState: 'MENU',
   score: 0,
-  highScore: 0,
-  coins: 500,
+  highScore: initialState.highScore,
+  coins: initialState.coins,
   
   // Level system - start at level 1
   currentLevel: 1,
   currentLevelConfig: LEVELS[0],
   selectedLevel: 1,
   
-  // Level progress - level 1 is always unlocked
-  levelProgress: [],
-  maxUnlockedLevel: 1,
+  // Level progress - hydrate from offline storage
+  levelProgress: initialState.levelProgress,
+  maxUnlockedLevel: initialState.maxUnlockedLevel,
   
   placedFigures: [],
   figureQueue: [],
@@ -141,11 +164,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   timeRemaining: LEVELS[0].startTime,
   timerInterval: null,
   
-  upgrades: {
-    bombCount: 1,
-    figureSize: 1,
-    queueSize: 1
-  },
+  upgrades: initialState.upgrades,
   
   notification: null,
   
@@ -252,6 +271,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       levelProgress: updatedProgress,
       maxUnlockedLevel: Math.min(LEVELS.length, maxCompleted + 1),
     });
+    
+    offlineStorage.updateLevelProgress(levelNumber, score, true);
+    offlineStorage.updateHighScore(state.score);
   },
   
   stopTimer: () => {
@@ -274,19 +296,31 @@ export const useGameStore = create<GameStore>((set, get) => ({
     };
   }),
   
-  collectCoin: (amount) => set((state) => ({ coins: state.coins + amount })),
+  collectCoin: (amount) => {
+    const newCoins = get().coins + amount;
+    set({ coins: newCoins });
+    offlineStorage.setPlayerStats({ coins: newCoins });
+  },
   
   buyUpgrade: (type) => {
     const state = get();
     const cost = UPGRADE_COSTS[type] * state.upgrades[type];
     
     if (state.coins >= cost) {
+      const newCoins = state.coins - cost;
+      const newUpgrades = {
+        ...state.upgrades,
+        [type]: state.upgrades[type] + 1
+      };
       set({
-        coins: state.coins - cost,
-        upgrades: {
-          ...state.upgrades,
-          [type]: state.upgrades[type] + 1
-        }
+        coins: newCoins,
+        upgrades: newUpgrades,
+      });
+      offlineStorage.setPlayerStats({
+        coins: newCoins,
+        bombCount: newUpgrades.bombCount,
+        figureSize: newUpgrades.figureSize,
+        queueSize: newUpgrades.queueSize,
       });
       return true;
     }
@@ -473,13 +507,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
     });
   },
 
-  syncWithProfile: (profile) => set({
-    coins: profile.coins,
-    highScore: profile.highScore,
-    upgrades: {
+  syncWithProfile: (profile) => {
+    const upgrades = {
       bombCount: profile.speedUpgrade,
       figureSize: profile.startSizeUpgrade,
       queueSize: profile.magnetUpgrade,
-    }
-  }),
+    };
+    set({
+      coins: profile.coins,
+      highScore: profile.highScore,
+      upgrades,
+    });
+    offlineStorage.setPlayerStats({
+      coins: profile.coins,
+      highScore: profile.highScore,
+      bombCount: upgrades.bombCount,
+      figureSize: upgrades.figureSize,
+      queueSize: upgrades.queueSize,
+    });
+  },
 }));

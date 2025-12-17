@@ -686,16 +686,16 @@ export function GameEngine({ onGameOver }: GameEngineProps) {
       drawFigure(ctx, previewFigure, time);
     }
 
-    const queuePreviewSize = Math.min(3, figureQueue.length);
-    for (let i = 0; i < queuePreviewSize; i++) {
+    const previewCount = Math.min(upgrades.queueSize, 3, figureQueue.length);
+    for (let i = 0; i < previewCount; i++) {
       const templateId = figureQueue[i];
       const queueFigure: FigureInstance = {
         id: `queue-${i}`,
         templateId,
         x: canvas.width - 60,
-        y: previewY + 40 + i * 30,
+        y: previewY + 40 + i * 25,
         rotation: 0,
-        scale: 0.5,
+        scale: 0.4,
         vibrationOffset: i,
         isPlaced: false,
       };

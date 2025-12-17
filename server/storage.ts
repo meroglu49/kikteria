@@ -92,6 +92,29 @@ export class DatabaseStorage implements IStorage {
   }
   
   async addLeaderboardEntry(entry: InsertLeaderboard): Promise<Leaderboard> {
+    // Check if user already has a leaderboard entry
+    const [existing] = await db
+      .select()
+      .from(leaderboard)
+      .where(eq(leaderboard.userId, entry.userId));
+    
+    if (existing) {
+      // Only update if new score is higher
+      if (entry.score > existing.score) {
+        const [updated] = await db
+          .update(leaderboard)
+          .set({ 
+            score: entry.score, 
+            createdAt: new Date() 
+          })
+          .where(eq(leaderboard.id, existing.id))
+          .returning();
+        return updated;
+      }
+      return existing;
+    }
+    
+    // Create new entry
     const [newEntry] = await db
       .insert(leaderboard)
       .values(entry)

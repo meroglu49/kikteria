@@ -9,6 +9,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { useCurrentUser, usePlayerProfile, useUpdateProfile, useSubmitScore, useUpdateLevelProgress, useLevelProgress } from "./lib/api";
 import { LEVELS } from "./lib/game-constants";
 import { playGameOverSound } from "./lib/sounds";
+import { offlineStorage } from "./lib/offline-storage";
 
 interface WinScreenProps {
   score: number;
@@ -79,9 +80,9 @@ function WinScreen({ score, currentLevel, maxUnlockedLevel, user, profile, onRep
           <button 
             onClick={onMenu}
             className="w-full py-3 block-panel font-display text-sm hover:border-secondary transition-colors"
-            data-testid="button-level-select"
+            data-testid="button-main-menu"
           >
-            LEVEL SELECT
+            MAIN MENU
           </button>
         </div>
       </div>
@@ -121,6 +122,12 @@ function App() {
         isCompleted: p.isCompleted === 1,
       }));
       setLevelProgress(formattedProgress);
+      offlineStorage.mergeServerProgress(levelProgressData);
+    } else if (!user) {
+      const localProgress = offlineStorage.getLevelProgress();
+      if (localProgress.length > 0) {
+        setLevelProgress(localProgress);
+      }
     }
   }, [levelProgressData, user, setLevelProgress]);
 
@@ -135,8 +142,10 @@ function App() {
     playGameOverSound();
     setGameState('GAME_OVER');
 
+    const finalScore = useGameStore.getState().score;
+    offlineStorage.updateHighScore(finalScore);
+
     if (user && profile) {
-      const finalScore = useGameStore.getState().score;
       const coinsEarned = Math.floor(finalScore / 2);
       
       collectCoin(coinsEarned);
@@ -220,11 +229,11 @@ function App() {
                 RETRY LEVEL
               </button>
               <button 
-                onClick={() => setGameState('LEVEL_SELECT')}
+                onClick={() => setGameState('MENU')}
                 className="w-full py-3 block-panel font-display text-sm hover:border-secondary transition-colors"
-                data-testid="button-level-select"
+                data-testid="button-main-menu"
               >
-                LEVEL SELECT
+                MAIN MENU
               </button>
             </div>
           </div>
@@ -258,7 +267,7 @@ function App() {
               startTimer();
             }
           }}
-          onMenu={() => setGameState('LEVEL_SELECT')}
+          onMenu={() => setGameState('MENU')}
           onSaveProgress={async () => {
             recordLevelCompletion(currentLevel, score);
             if (user && profile) {

@@ -2,9 +2,17 @@
 
 ## Version
 
-**Current Version: v0.5** (December 17, 2025)
+**Current Version: v1.0** (December 17, 2025)
 
-### v0.5 Features (New)
+### v1.0 Features (Stable Release)
+- Full offline gameplay support (no internet required to play)
+- Local storage persistence for level progress, scores, coins, and upgrades
+- Automatic sync to server when coming back online
+- Guest play mode (play without logging in)
+- "MAIN MENU" buttons on game over and win screens
+- Improved leaderboard showing only best score per player
+
+### v0.5 Features
 - Unique synthesized sound effects for each bacteria type (Web Audio API)
 - Retro Bomberman-style bomb explosion sound
 - 8-bit victory fanfare with sparkle effects for level completion
