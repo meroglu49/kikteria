@@ -1,158 +1,166 @@
 # Kikteria - Bacteria Placement Game
 
-## Version
-
-**Current Version: v1.0** (December 17, 2025)
-
-### v1.0 Features (Stable Release)
-- Full offline gameplay support (no internet required to play)
-- Local storage persistence for level progress, scores, coins, and upgrades
-- Automatic sync to server when coming back online
-- Guest play mode (play without logging in)
-- "MAIN MENU" buttons on game over and win screens
-- Improved leaderboard showing only best score per player
-
-### v0.5 Features
-- Unique synthesized sound effects for each bacteria type (Web Audio API)
-- Retro Bomberman-style bomb explosion sound
-- 8-bit victory fanfare with sparkle effects for level completion
-- Sad but funny "wah wah" game over sound with slide whistle
-- Quick START button on home screen to begin the last unlocked level
-- GitHub integration for version control and backups
-
-### v0.4 Features
-- Collision highlighting system with red pulsing for 800ms before game over
-- "LEFT" counter showing remaining figures to place
-- Win condition triggers when all required figures are placed
-- Celebration confetti animation for 2.5 seconds before WIN screen
-
-### v0.3 Features
-- 7-level progression system with increasing difficulty
-- Level selection screen showing unlocked levels and best scores
-- Level progress persistence (saves completion status and best scores)
-- Level-based parameters: figure count, vibration speed, size multiplier, start time, time bonus
-- Dynamic shrinking play area on higher levels as timer counts down
-- Win screen with next level/replay options
-- Game over screen with retry level option
-
-### v0.2 Features
-- 15-second timer with +1 second bonus per figure placed
-- Water drop ripple animation on figure placement (green for bacteria)
-- Dramatic explosion animation for bombs (flash, shockwaves, particles)
-- Bombs can now be placed anywhere, including on top of other figures
-- 150-pixel blast radius for bomb explosions
-
-### v0.1 Features
-- Collision detection (bacteria touching each other)
-- Boundary detection (bacteria touching play area edges)
-- 10 unique bacteria figures with expressive faces
-- Bright, colorful UI with sidebar layout
-- Bomb power-ups to clear figures
-- User authentication and profiles
-- Upgrade shop system
-- Global leaderboard
-
 ## Overview
 
-Kikteria is a bright, colorful puzzle game where players place funny-looking bacteria figures on a canvas without letting them touch. Built with a React frontend and Express backend, featuring vibrating creatures with expressive faces.
+Kikteria is a bright, colorful puzzle game where players place funny-looking bacteria figures on a canvas without letting them touch. Built with React frontend and Express backend, featuring vibrating creatures with expressive faces. Current version: v10. Deployed version: d1.0.1.
 
-The game includes user authentication, player profiles with persistent progress, an upgrade shop system, and a global leaderboard.
+**Core Features:**
+- 100-level progressive difficulty campaign + Endless Mode
+- Google Sign-In authentication via Replit integration
+- Shop system with 10 upgrades + 4 consumable items
+- Achievement system with celebration pop-ups and confetti
+- Daily Lab Orders + Weekly Community Goals
+- Global leaderboard
+- Offline-first with automatic sync
+- Progressive Web App (PWA) for mobile install
+- Interactive tutorial for first-time players on level 1
+- Admin panel at `/admin`
 
-## Game Mechanics
+## PWA Support
 
-### Core Gameplay
-- **Click to Place**: Figures appear at the bottom of the screen; click anywhere in the play area to place them
-- **15-Second Timer**: Start with 15 seconds, gain +1 second for each figure placed
-- **Vibrating Bacteria**: Each figure has unique vibration patterns (horizontal, vertical, circular, pulse, diagonal)
-- **Collision Detection**: Game over when any two placed figures touch each other
-- **Boundary Detection**: Game over if a figure touches the play area boundary
-- **Win Condition**: Successfully place all figures without any collisions before time runs out
-
-### Figure Types (10 Unique Characters)
-- **Blobby**: Yellow goofy slime with big eyes and silly smile
-- **Grumpus**: Green angry square with legs
-- **Wobbly**: Blue teardrop with worried expression
-- **Cyclops**: Purple one-eyed monster with horns and toothy grin
-- **Squish**: Pink squishy blob with cat-like features
-- **Chompy**: Orange monster with huge teeth
-- **Derp**: Brown potato-shaped creature with misaligned eyes
-- **Ghosty**: White spooky ghost with big dark eyes
-- **Spiky**: Red spiky ball with angry face
-- **Gloop**: Green toxic slime with sleepy expression
-
-### Special Items
-- **Bomb**: Click to clear nearby figures from the board
-- **Bomb Button**: Use stored bombs to remove the last placed figure
-
-### Upgrades (Shop)
-- **Bombs+**: Start with more bombs
-- **Shrink**: Smaller bacteria size (easier placement)
-- **Preview+**: See more upcoming figures in queue
+The game is installable on mobile devices:
+- **manifest.json**: App configuration for install prompts
+- **sw.js**: Service worker for offline caching
+- **Icons**: SVG icons at 192x192 and 512x512
+- Users can "Add to Home Screen" on Android/iOS for app-like experience
 
 ## User Preferences
 
-Preferred communication style: Simple, everyday language.
+- **Communication style**: Simple, everyday language
+- **Do NOT request user feedback** without asking permission first
+- **Do NOT take screenshots** - user prefers faster execution
+- **Work silently**: No explanations unless asked, just execute
+- **Skip architect reviews** for small changes (< 20 lines)
+- **Trust decisions**: Make technical choices without asking, minimize clarifying questions
+- **Batch operations**: Combine related changes, use parallel tool calls
+- **Direct file access**: When user provides file paths, use them directly without searching
 
-## System Architecture
+## Key Files & Architecture
 
-### Frontend Architecture
-- **Framework**: React with TypeScript, bundled via Vite
-- **State Management**: Zustand for game state (`client/src/lib/store.ts`)
-- **Game Engine**: Canvas API with 60fps render loop, per-frame collision detection
-- **Data Fetching**: TanStack React Query for server state
-- **UI Components**: shadcn/ui component library with Radix UI primitives
-- **Styling**: Tailwind CSS v4 with bright colorful theme
-- **Animations**: Framer Motion for menu transitions, Canvas API for figure vibrations
+### Frontend (client/)
+| File | Purpose |
+|------|---------|
+| `src/App.tsx` | Main app component, game state routing, win/lose screens |
+| `src/lib/store.ts` | Zustand store - all game state, upgrades, figures, timers |
+| `src/lib/game-constants.ts` | Bacteria templates, level configs, game config values |
+| `src/lib/api.ts` | React Query hooks for all API calls |
+| `src/lib/engagement-service.ts` | Achievement tracking, community contributions, celebrations |
+| `src/lib/offline-storage.ts` | LocalStorage persistence, pending sync queue |
+| `src/components/game/GameEngine.tsx` | Canvas rendering, collision detection, 60fps loop |
+| `src/components/game/HUD.tsx` | In-game UI (score, timer, bombs, consumables) |
+| `src/components/game/Shop.tsx` | Upgrade purchase interface |
+| `src/components/game/AchievementCelebration.tsx` | Achievement unlock modal with confetti |
+| `src/hooks/use-auth.ts` | Authentication hook, syncs auth to engagement service |
 
-### Backend Architecture
-- **Framework**: Express.js with TypeScript
-- **Authentication**: Passport.js with local strategy, session-based auth using express-session
-- **Password Security**: Scrypt hashing with timing-safe comparison
-- **API Pattern**: RESTful endpoints under `/api/` prefix
+### Backend (server/)
+| File | Purpose |
+|------|---------|
+| `routes.ts` | All API endpoints (~730 lines) |
+| `storage.ts` | IStorage interface + Drizzle implementations |
+| `google-docs.ts` | Google Docs API client for documentation generation |
+| `generate-docs.ts` | Documentation content and generation logic |
+| `replit_integrations/auth.ts` | Google OAuth via Replit |
 
-### Data Storage
-- **Database**: PostgreSQL with Drizzle ORM
-- **Schema Location**: `shared/schema.ts` (shared between frontend and backend)
-- **Tables**:
-  - `users`: Authentication credentials
-  - `playerProfiles`: Game progress (coins, high score, upgrades)
-  - `leaderboard`: Global score rankings
-  - `levelProgress`: Level completion status and best scores per user
+### Shared (shared/)
+| File | Purpose |
+|------|---------|
+| `schema.ts` | Drizzle ORM schema, Zod validators, types |
+| `models/auth.ts` | User type definitions |
 
-### Key Files
-- `client/src/lib/game-constants.ts`: Figure templates, vibration patterns, game config
-- `client/src/lib/store.ts`: Zustand store for game state (placed figures, queue, bombs, timer)
-- `client/src/components/game/GameEngine.tsx`: Canvas rendering, collision detection, boundary checks, placement logic
-- `client/src/components/game/HUD.tsx`: In-game UI (timer, score, bomb button)
+## Database Tables
 
-### Build System
-- **Development**: Vite dev server with HMR for frontend, tsx for backend
-- **Production**: Vite builds static assets, esbuild bundles server with dependency optimization
-- **Output**: `dist/public` for frontend, `dist/index.cjs` for server
+- `users` - OAuth user accounts
+- `playerProfiles` - Coins, high scores, upgrade levels
+- `leaderboard` - High score entries
+- `levelProgress` - Per-user level completion (unique on userId+levelNumber)
+- `userAnalytics` - Behavior tracking events
+- `errorLogs` - Client error reports
+- `appUpdatePolicy` - Version management
+- `dailyOrders` - Daily challenge definitions
+- `weeklyGoals` - Community goal tracking
+- `weeklyContributions` - Per-user weekly contributions (unique on goalId+visitorId)
+- `achievements` - Achievement definitions
+- `achievementProgress` - Per-user achievement status (unique on visitorId+achievementId)
 
-### Key Design Patterns
-- **Shared Types**: Schema definitions in `shared/` directory used by both client and server
-- **Storage Interface**: `IStorage` interface in `server/storage.ts` abstracts database operations
-- **Path Aliases**: `@/` for client source, `@shared/` for shared code
+## API Endpoints Summary
 
-## External Dependencies
+**Auth**: GET `/api/auth/user`, `/api/login`, `/api/logout`
+**Profile**: GET/PATCH `/api/profile`
+**Leaderboard**: GET/POST `/api/leaderboard`
+**Levels**: GET/POST `/api/levels/progress`
+**Daily Orders**: GET `/api/daily-order`, POST `/api/daily-order/complete`
+**Community**: GET `/api/community-goal`, POST `/api/community-goal/contribute`
+**Achievements**: GET `/api/achievements`, GET/POST `/api/achievements/progress`, POST `/api/achievements/claim`
+**Admin**: Various at `/api/admin/*` (requires ADMIN_USER_IDS)
+**Analytics/Errors**: POST `/api/analytics`, POST `/api/errors`
+**Version**: GET `/api/version`
 
-### Database
-- PostgreSQL (connection via `DATABASE_URL` environment variable)
-- Drizzle ORM for type-safe queries
-- Drizzle Kit for schema migrations (`npm run db:push`)
+## Game Mechanics
 
-### Authentication
-- express-session for session management
-- passport and passport-local for authentication strategy
-- connect-pg-simple available for PostgreSQL session storage
+### Collision System
+- Canvas hit testing with 5px collision padding
+- Hysteresis: requires 3 consecutive collision frames before game over
+- Clean frame counter resets after 5 clean frames
+- Accounts for vibration envelope (max displacement)
 
-### Frontend Libraries
-- React 18 with React Query
-- Framer Motion for animations
-- Canvas Confetti for celebratory effects
-- Extensive Radix UI component primitives
+### Vibration Patterns
+Horizontal, Vertical, Circular, Pulse, Diagonal - each with different envelope calculations
 
-### Development Tools
-- Replit-specific Vite plugins (cartographer, dev-banner, runtime-error-modal)
-- Custom meta images plugin for OpenGraph tags
+### Consumables
+- **Shield**: Forgives 1 collision, requires ≥1 charge
+- **2nd Chance**: After game over, removes last figure and resumes (works in Endless Mode via isEndlessMode flag)
+- **Freeze**: Pauses vibrations temporarily
+- **Cleanser**: Lasso tool to remove bacteria
+
+### Economy
+- Coins earned from level completion, rare bacteria bonuses, achievements, daily orders
+- 10 upgrade types with escalating costs
+- Achievement tiers: Bronze (1), Silver (2), Gold (3)
+
+## Integrations
+
+- **Google OAuth**: Replit auth integration (javascript_replit_auth)
+- **Google Docs**: For documentation generation (google-docs connection)
+- **PostgreSQL**: Replit database integration
+
+## Scripts
+
+- `npx tsx scripts/generate-docs-script.ts` - Regenerate Google Docs documentation
+- `npx vitest run` - Run all unit tests (190 tests)
+- `npx vitest` - Run tests in watch mode
+
+## Testing
+
+Test files are located in `__tests__` directories:
+- `client/src/lib/__tests__/game-constants.test.ts` - Vibration envelope, effective radius, level configs, bacteria templates
+- `client/src/lib/__tests__/offline-storage.test.ts` - Level progress, player stats, pending sync, session management
+- `client/src/lib/__tests__/store.test.ts` - Game state, notifications, level selection, endless mode, consumables
+- `client/src/lib/__tests__/upgrades.test.ts` - Upgrade costs, max levels, purchase validation, skill consumables
+- `client/src/lib/__tests__/endless-mode.test.ts` - Endless mode init, wave advancement, scoring, timer
+- `client/src/lib/__tests__/achievements.test.ts` - Achievement definitions, categories, tiers, tracking keys
+- `client/src/lib/__tests__/bomb-mechanics.test.ts` - Bomb targeting, detonation, blast radius, figure clearing
+- `server/__tests__/storage.test.ts` - Player profiles, leaderboard, level progress, admin methods
+
+Config: `vitest.config.ts` with path aliases for `@` and `@shared`
+
+## Recent Fixes (v7.1)
+
+1. **Shield fix**: Now works with ≥1 shield instead of ≥2
+2. **2nd Chance Endless fix**: Uses isEndlessMode flag for proper detection, removes last figure instead of resetting
+3. **Achievement celebrations**: Pop-up modal with confetti, tier-based styling, user-scoped cache to prevent duplicates
+4. **Performance**: Throttled localStorage writes (1s max), immediate saves for high-value events
+5. **Database indexes**: Composite unique indexes on leaderboard, levelProgress, weeklyContributions, achievementProgress
+
+## Admin Access
+
+Admin user IDs defined in `client/src/pages/Admin.tsx`:
+```
+const ADMIN_USER_IDS = ['51476893'];
+```
+
+## Documentation Links
+
+- Player Guide: https://docs.google.com/document/d/1SRGokjha2vVbsrMyPYIC7lo_DlDtTGO1JZ8orDzWnKo/edit
+- API Reference: https://docs.google.com/document/d/1nlxhU51lUT8XuUtMOFKzwLP71Up4eg8PTBFGt5ewSzY/edit
+- Game Design Document: https://docs.google.com/document/d/1YufprTw_neSmfl_ly-82IfLDIzFgOb8bhbt_SOt3BgY/edit
+- Enterprise Admin Guide: https://docs.google.com/document/d/1eKgolSnrcaiNIDjey_8unmdGsYuRu44eBHup7d17Ggg/edit

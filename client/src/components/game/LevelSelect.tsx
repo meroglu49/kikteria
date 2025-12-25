@@ -3,7 +3,9 @@ import { useGameStore } from '../../lib/store';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Lock, Star, Trophy } from 'lucide-react';
 import { LEVELS } from '../../lib/game-constants';
-import { useLevelProgress, useCurrentUser } from '../../lib/api';
+import { useLevelProgress } from '../../lib/api';
+import { useAuth } from '../../hooks/use-auth';
+import { offlineStorage } from '../../lib/offline-storage';
 
 export function LevelSelect() {
   const { 
@@ -16,7 +18,7 @@ export function LevelSelect() {
     setLevelProgress 
   } = useGameStore();
   
-  const { data: user } = useCurrentUser();
+  const { user } = useAuth();
   const { data: progressData } = useLevelProgress();
   
   useEffect(() => {
@@ -36,6 +38,8 @@ export function LevelSelect() {
     initializeGame();
     setGameState('PLAYING');
     startTimer();
+    // Track metadata: level play event
+    offlineStorage.trackLevelPlay(levelNumber);
   };
 
   const getLevelProgress = (levelNumber: number) => {
@@ -43,28 +47,29 @@ export function LevelSelect() {
   };
 
   return (
-    <div className="absolute inset-0 bg-background flex items-center justify-center overflow-hidden scanlines crt-vignette">
-      <div className="absolute inset-0 grid-bg opacity-30" />
-      <div className="absolute inset-4 border-4 border-dashed border-primary/30 pointer-events-none" />
+    <div className="min-h-screen overflow-y-auto bg-background scanlines crt-vignette scrollable-screen">
+      <div className="fixed inset-0 grid-bg opacity-50 pointer-events-none" />
 
-      <button
+      <motion.button
+        initial={{ x: -20, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
         onClick={() => setGameState('MENU')}
-        className="absolute top-6 left-6 block-panel px-4 py-2 hover:bg-primary/20 transition-colors flex items-center gap-2 z-20"
+        className="fixed top-6 left-6 block-panel px-4 py-2 hover:border-primary transition-colors flex items-center gap-2 z-20"
         data-testid="button-back"
       >
-        <ArrowLeft size={18} />
+        <ArrowLeft size={18} className="text-primary" />
         <span className="font-ui text-lg">BACK</span>
-      </button>
+      </motion.button>
 
-      <div className="relative z-10 w-full max-w-2xl px-6 flex flex-col items-center gap-8">
+      <div className="relative z-10 w-full max-w-4xl mx-auto px-6 py-20 flex flex-col items-center gap-6">
         <div className="text-center">
           <motion.h1 
             initial={{ y: -30, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            className="text-3xl md:text-4xl font-display text-shadow-pixel"
+            className="text-3xl md:text-4xl font-display"
             style={{
-              color: '#4ADE80',
-              textShadow: '3px 3px 0px #166534, 6px 6px 0px #000'
+              color: '#22F2A2',
+              textShadow: '0 0 10px #22F2A2, 0 0 20px #22F2A2, 3px 3px 0px #0a5c3a'
             }}
           >
             SELECT LEVEL
@@ -73,13 +78,13 @@ export function LevelSelect() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.2 }}
-            className="font-ui text-xl text-secondary tracking-widest mt-3"
+            className="font-ui text-xl text-secondary text-glow tracking-widest mt-2"
           >
             Complete levels to unlock more!
           </motion.p>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 w-full">
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 w-full pb-8">
           {LEVELS.map((level, index) => {
             const levelNumber = index + 1;
             const isUnlocked = levelNumber <= maxUnlockedLevel;
@@ -91,48 +96,46 @@ export function LevelSelect() {
                 key={level.level}
                 initial={{ scale: 0.8, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                transition={{ delay: index * 0.1 }}
-                whileHover={isUnlocked ? { scale: 1.05 } : {}}
+                transition={{ delay: Math.min(index * 0.02, 0.5) }}
+                whileHover={isUnlocked ? { scale: 1.05, y: -4 } : {}}
                 whileTap={isUnlocked ? { scale: 0.98 } : {}}
                 onClick={() => handleLevelSelect(levelNumber)}
                 disabled={!isUnlocked}
                 className={`
-                  relative block-panel p-4 flex flex-col items-center gap-2 transition-all
+                  relative block-panel p-2 sm:p-3 flex flex-col items-center gap-1 transition-all rounded-lg
                   ${isUnlocked 
                     ? 'hover:border-primary cursor-pointer' 
-                    : 'opacity-50 cursor-not-allowed'
+                    : 'opacity-40 cursor-not-allowed'
                   }
-                  ${isCompleted ? 'border-primary' : ''}
+                  ${isCompleted ? 'border-primary shadow-[0_0_15px_rgba(34,242,162,0.3)]' : ''}
+                  ${level.isMilestone ? 'ring-2 ring-secondary/50' : ''}
                 `}
                 data-testid={`button-level-${levelNumber}`}
               >
                 {!isUnlocked && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-10">
-                    <Lock size={32} className="text-foreground/60" />
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/60 z-10 rounded-lg">
+                    <Lock size={20} className="text-muted-foreground" />
                   </div>
                 )}
                 
                 {isCompleted && (
-                  <div className="absolute top-2 right-2">
-                    <Star size={20} className="text-secondary fill-secondary" />
+                  <div className="absolute top-1 right-1">
+                    <Star size={14} className="text-secondary fill-secondary drop-shadow-[0_0_6px_rgba(249,233,0,0.5)]" />
                   </div>
                 )}
 
-                <span className="font-display text-2xl text-primary">
-                  {levelNumber}
-                </span>
-                <span className="font-ui text-sm text-foreground/80">
+                <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center ${isCompleted ? 'bg-primary/20' : 'bg-muted'}`}>
+                  <span className={`font-display text-base sm:text-lg ${isCompleted ? 'text-primary text-glow' : 'text-foreground'}`}>
+                    {levelNumber}
+                  </span>
+                </div>
+                <span className="font-ui text-xs sm:text-sm text-foreground/80 text-center leading-tight line-clamp-1">
                   {level.name}
                 </span>
-                
-                <div className="text-xs font-ui text-foreground/60 space-y-0.5">
-                  <div>{level.figuresCount} figures</div>
-                  <div>{level.startTime}s timer</div>
-                </div>
 
                 {progress && progress.bestScore > 0 && (
-                  <div className="flex items-center gap-1 mt-1 text-secondary font-ui text-sm">
-                    <Trophy size={14} />
+                  <div className="flex items-center gap-1 text-secondary font-ui text-xs">
+                    <Trophy size={10} />
                     <span>{progress.bestScore}</span>
                   </div>
                 )}
@@ -142,11 +145,16 @@ export function LevelSelect() {
         </div>
 
         {!user && (
-          <div className="block-panel px-6 py-3 text-center">
-            <p className="font-ui text-lg text-foreground/60">
-              Log in to save your progress!
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.5 }}
+            className="block-panel px-6 py-3 text-center"
+          >
+            <p className="font-ui text-lg text-muted-foreground">
+              Sign in to save your progress!
             </p>
-          </div>
+          </motion.div>
         )}
       </div>
     </div>

@@ -6,7 +6,10 @@ import {
   BOMB_TEMPLATE,
   FigureInstance,
   ShapeComponent,
-  VibrationPattern 
+  VibrationPattern,
+  computeEffectiveRadius,
+  getCanvasScaleFactor,
+  calculateCanvasDimensions
 } from '../../lib/game-constants';
 
 interface GameEngineProps {
@@ -73,8 +76,13 @@ export function GameEngine({ onGameOver }: GameEngineProps) {
   const collisionHighlightRef = useRef<CollisionHighlight | null>(null);
   const confettiRef = useRef<ConfettiParticle[]>([]);
   const celebrationStartedRef = useRef<boolean>(false);
+  const gameOverTriggeredRef = useRef(false);
+  const collisionHistoryRef = useRef<Map<string, number[]>>(new Map());
+  const cleanFrameCountRef = useRef<Map<string, number>>(new Map());
   const [previewPosition, setPreviewPosition] = useState<{ x: number; y: number } | null>(null);
   const [isValidPlacement, setIsValidPlacement] = useState(true);
+  const [canvasScale, setCanvasScale] = useState(1);
+  const [isDrawingLasso, setIsDrawingLasso] = useState(false);
   
   const { 
     placedFigures, 
@@ -88,20 +96,50 @@ export function GameEngine({ onGameOver }: GameEngineProps) {
     stopTimer,
     currentLevelConfig,
     timeRemaining,
+    gameState,
+    isLassoMode,
+    lassoPoints,
+    addLassoPoint,
+    executeLasso,
   } = useGameStore();
+  
+  const prevGameStateRef = useRef(gameState);
+  const mountedRef = useRef(false);
 
+  // Initialize game on mount
   useEffect(() => {
-    gameOverTriggeredRef.current = false;
-    collisionHighlightRef.current = null;
-    celebrationStartedRef.current = false;
-    confettiRef.current = [];
-    initializeGame();
-    startTimer();
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      gameOverTriggeredRef.current = false;
+      collisionHighlightRef.current = null;
+      celebrationStartedRef.current = false;
+      confettiRef.current = [];
+      collisionHistoryRef.current.clear();
+      cleanFrameCountRef.current.clear();
+      initializeGame();
+      startTimer();
+    }
     
     return () => {
       stopTimer();
+      mountedRef.current = false;
     };
   }, [initializeGame, startTimer, stopTimer]);
+  
+  // Handle game state transitions
+  useEffect(() => {
+    const prev = prevGameStateRef.current;
+    
+    if (prev === 'GAME_OVER' && gameState === 'PLAYING') {
+      // Resuming from second chance - reset collision detection but don't reinitialize game
+      gameOverTriggeredRef.current = false;
+      collisionHighlightRef.current = null;
+      collisionHistoryRef.current.clear();
+      cleanFrameCountRef.current.clear();
+    }
+    
+    prevGameStateRef.current = gameState;
+  }, [gameState]);
 
   const getVibrationOffset = useCallback((pattern: VibrationPattern, time: number, speed: number, amplitude: number) => {
     const t = time * speed;
@@ -183,19 +221,24 @@ export function GameEngine({ onGameOver }: GameEngineProps) {
     
     if (!template) return;
 
-    // Apply level-based speed multiplier
-    const speedMultiplier = useGameStore.getState().currentLevelConfig.speedMultiplier;
+    // Apply level-based speed multiplier and SLOW-MO upgrade
+    const state = useGameStore.getState();
+    const currentCanvasScale = state.canvasScale;
+    const levelSpeedMultiplier = state.currentLevelConfig.speedMultiplier;
+    const slowMoReduction = 1 - (state.upgrades.slowMo - 1) * 0.15;
+    const speedMultiplier = levelSpeedMultiplier * slowMoReduction;
+    const scaledAmplitude = template.vibrationAmplitude * currentCanvasScale;
     const vibration = getVibrationOffset(
       template.vibrationPattern, 
       time + figure.vibrationOffset, 
       template.vibrationSpeed * speedMultiplier, 
-      template.vibrationAmplitude
+      scaledAmplitude
     );
 
     const x = figure.x + (vibration.x || 0);
     const y = figure.y + (vibration.y || 0);
     const pulseScale = (vibration as { scale?: number }).scale || 1;
-    const finalScale = figure.scale * pulseScale;
+    const finalScale = figure.scale * pulseScale * currentCanvasScale;
 
     ctx.save();
     
@@ -210,6 +253,24 @@ export function GameEngine({ onGameOver }: GameEngineProps) {
       drawShape(ctx, modifiedShape, x, y, finalScale);
     }
 
+    // Draw collision border (visible hit area)
+    if (figure.isPlaced && figure.templateId !== 'bomb') {
+      const collisionRadius = computeEffectiveRadius(
+        { ...figure, scale: figure.scale * pulseScale },
+        BACTERIA_TEMPLATES,
+        BOMB_TEMPLATE,
+        currentCanvasScale
+      );
+      
+      ctx.beginPath();
+      ctx.arc(x, y, collisionRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = isInvalid ? 'rgba(255, 68, 68, 0.6)' : 'rgba(34, 242, 162, 0.4)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
     ctx.restore();
   }, [drawShape, getVibrationOffset]);
 
@@ -218,28 +279,51 @@ export function GameEngine({ onGameOver }: GameEngineProps) {
       ? BOMB_TEMPLATE 
       : BACTERIA_TEMPLATES.find(t => t.id === figure.templateId);
     
-    if (!template) return { x: figure.x, y: figure.y, radius: GAME_CONFIG.FIGURE_BASE_SIZE * figure.scale };
+    const state = useGameStore.getState();
+    const scale = state.canvasScale;
+    
+    if (!template) return { x: figure.x, y: figure.y, radius: GAME_CONFIG.FIGURE_BASE_SIZE * figure.scale * scale };
 
-    // Apply level-based speed multiplier
-    const speedMultiplier = useGameStore.getState().currentLevelConfig.speedMultiplier;
+    // Apply level-based speed multiplier and SLOW-MO upgrade
+    const levelSpeedMultiplier = state.currentLevelConfig.speedMultiplier;
+    const slowMoReduction = 1 - (state.upgrades.slowMo - 1) * 0.15;
+    const speedMultiplier = levelSpeedMultiplier * slowMoReduction;
+    const scaledAmplitude = template.vibrationAmplitude * scale;
     const vibration = getVibrationOffset(
       template.vibrationPattern, 
       time + figure.vibrationOffset, 
       template.vibrationSpeed * speedMultiplier, 
-      template.vibrationAmplitude
+      scaledAmplitude
+    );
+
+    const pulseScale = (vibration as { scale?: number }).scale || 1;
+    const effectiveRadius = computeEffectiveRadius(
+      { ...figure, scale: figure.scale * pulseScale },
+      BACTERIA_TEMPLATES,
+      BOMB_TEMPLATE,
+      scale
     );
 
     return {
       x: figure.x + (vibration.x || 0),
       y: figure.y + (vibration.y || 0),
-      radius: GAME_CONFIG.FIGURE_BASE_SIZE * figure.scale * ((vibration as { scale?: number }).scale || 1)
+      radius: effectiveRadius
     };
   }, [getVibrationOffset]);
 
+  const COLLISION_WINDOW_SIZE = 12;
+  const CONTACT_RATIO_THRESHOLD = 0.5;
+  
   const checkRuntimeCollisions = useCallback((time: number): { collided: boolean; figureIds?: string[] } => {
     const figures = useGameStore.getState().placedFigures;
-    if (figures.length < 2) return { collided: false };
+    if (figures.length < 2) {
+      collisionHistoryRef.current.clear();
+      cleanFrameCountRef.current.clear();
+      return { collided: false };
+    }
 
+    const activePairs = new Set<string>();
+    
     for (let i = 0; i < figures.length; i++) {
       for (let j = i + 1; j < figures.length; j++) {
         const posA = getFigurePositionAtTime(figures[i], time);
@@ -248,27 +332,72 @@ export function GameEngine({ onGameOver }: GameEngineProps) {
         const dx = posA.x - posB.x;
         const dy = posA.y - posB.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        const minDistance = posA.radius + posB.radius - GAME_CONFIG.COLLISION_PADDING;
+        const rawMinDistance = posA.radius + posB.radius;
         
-        if (distance < minDistance) {
+        const penetrationDepth = Math.max(0, rawMinDistance - distance);
+        const isInContact = penetrationDepth > 0;
+        
+        const pairKey = `${figures[i].id}-${figures[j].id}`;
+        activePairs.add(pairKey);
+        
+        let history = collisionHistoryRef.current.get(pairKey);
+        if (!history) {
+          history = [];
+          collisionHistoryRef.current.set(pairKey, history);
+        }
+        
+        let cleanFrames = cleanFrameCountRef.current.get(pairKey) || 0;
+        
+        if (isInContact) {
+          cleanFrames = 0;
+          history.push(penetrationDepth);
+        } else {
+          cleanFrames++;
+          if (cleanFrames >= 3) {
+            history.length = 0;
+            cleanFrames = 0;
+          } else {
+            history.push(0);
+          }
+        }
+        cleanFrameCountRef.current.set(pairKey, cleanFrames);
+        
+        if (history.length > COLLISION_WINDOW_SIZE) {
+          history.shift();
+        }
+        
+        const contactFrames = history.filter(d => d > 0).length;
+        const contactRatio = history.length > 0 ? contactFrames / history.length : 0;
+        
+        if (contactRatio >= CONTACT_RATIO_THRESHOLD && history.length >= COLLISION_WINDOW_SIZE) {
           return { collided: true, figureIds: [figures[i].id, figures[j].id] };
         }
       }
     }
+    
+    Array.from(collisionHistoryRef.current.keys()).forEach(key => {
+      if (!activePairs.has(key)) {
+        collisionHistoryRef.current.delete(key);
+        cleanFrameCountRef.current.delete(key);
+      }
+    });
+    
     return { collided: false };
   }, [getFigurePositionAtTime]);
   
   const findCollidingFigures = useCallback((newFigure: FigureInstance): string[] => {
-    const figures = useGameStore.getState().placedFigures;
-    const baseRadius = GAME_CONFIG.FIGURE_BASE_SIZE * newFigure.scale;
+    const state = useGameStore.getState();
+    const figures = state.placedFigures;
+    const currentCanvasScale = state.canvasScale;
+    const effectiveRadius = computeEffectiveRadius(newFigure, BACTERIA_TEMPLATES, BOMB_TEMPLATE, currentCanvasScale);
     const collidingIds: string[] = [];
     
     for (const placed of figures) {
-      const placedRadius = GAME_CONFIG.FIGURE_BASE_SIZE * placed.scale;
+      const placedEffectiveRadius = computeEffectiveRadius(placed, BACTERIA_TEMPLATES, BOMB_TEMPLATE, currentCanvasScale);
       const dx = newFigure.x - placed.x;
       const dy = newFigure.y - placed.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
-      const minDistance = baseRadius + placedRadius - GAME_CONFIG.COLLISION_PADDING;
+      const minDistance = effectiveRadius + placedEffectiveRadius + 1;
       
       if (distance < minDistance) {
         collidingIds.push(placed.id);
@@ -276,8 +405,6 @@ export function GameEngine({ onGameOver }: GameEngineProps) {
     }
     return collidingIds;
   }, []);
-
-  const gameOverTriggeredRef = useRef(false);
 
   const createRipple = useCallback((x: number, y: number, color: string = '#4ADE80') => {
     const ripple: Ripple = {
@@ -525,19 +652,35 @@ export function GameEngine({ onGameOver }: GameEngineProps) {
 
     // Only check collisions when playing (not celebrating)
     if (currentGameState === 'PLAYING') {
-      const collisionResult = checkRuntimeCollisions(time);
-      if (!gameOverTriggeredRef.current && collisionResult.collided) {
-        gameOverTriggeredRef.current = true;
-        collisionHighlightRef.current = {
-          type: 'collision',
-          figureIds: collisionResult.figureIds,
-          timestamp: Date.now(),
-        };
-        useGameStore.getState().setNotification('COLLISION!');
-        setTimeout(() => {
-          setGameState('GAME_OVER');
-          onGameOver();
-        }, 800);
+      const gameState = useGameStore.getState();
+      const isInCooldown = gameState.shieldCooldownUntil > Date.now();
+      
+      if (!isInCooldown) {
+        const collisionResult = checkRuntimeCollisions(time);
+        if (!gameOverTriggeredRef.current && collisionResult.collided) {
+          const hasShield = gameState.upgrades.shield >= 1 && !gameState.shieldUsed;
+          
+          if (hasShield && collisionResult.figureIds && collisionResult.figureIds.length > 0) {
+            const figureToRemove = collisionResult.figureIds[collisionResult.figureIds.length - 1];
+            useGameStore.getState().removeFigure(figureToRemove);
+            useGameStore.getState().useShield();
+            collisionHistoryRef.current.clear();
+            cleanFrameCountRef.current.clear();
+          } else {
+            gameOverTriggeredRef.current = true;
+            collisionHighlightRef.current = {
+              type: 'collision',
+              figureIds: collisionResult.figureIds,
+              timestamp: Date.now(),
+            };
+            useGameStore.getState().setNotification('COLLISION!');
+            useGameStore.getState().triggerKikAnnouncement('gameOverCollision');
+            setTimeout(() => {
+              setGameState('GAME_OVER');
+              onGameOver();
+            }, 800);
+          }
+        }
       }
     }
 
@@ -560,15 +703,14 @@ export function GameEngine({ onGameOver }: GameEngineProps) {
       ctx.stroke();
     }
 
-    const previewHeight = 120;
-    
-    // Calculate dynamic padding for shrinking play area
-    const basePadding = GAME_CONFIG.CANVAS_PADDING;
+    // Calculate dynamic padding for shrinking play area with canvas scale
+    const currentCanvasScale = useGameStore.getState().canvasScale;
+    const basePadding = GAME_CONFIG.CANVAS_PADDING * currentCanvasScale;
     const levelConfig = useGameStore.getState().currentLevelConfig;
     const currentTime = useGameStore.getState().timeRemaining;
     const maxTime = levelConfig.startTime;
     const timeElapsed = maxTime - currentTime;
-    const shrinkAmount = Math.max(0, timeElapsed * levelConfig.areaShrinkRate);
+    const shrinkAmount = Math.max(0, timeElapsed * levelConfig.areaShrinkRate * currentCanvasScale);
     const dynamicPadding = basePadding + shrinkAmount;
     const isShrinking = shrinkAmount > 0;
     
@@ -577,7 +719,7 @@ export function GameEngine({ onGameOver }: GameEngineProps) {
     ctx.strokeStyle = boundaryColor;
     ctx.lineWidth = 3;
     ctx.setLineDash([10, 5]);
-    ctx.strokeRect(dynamicPadding, dynamicPadding, canvas.width - dynamicPadding * 2, canvas.height - dynamicPadding * 2 - previewHeight);
+    ctx.strokeRect(dynamicPadding, dynamicPadding, canvas.width - dynamicPadding * 2, canvas.height - dynamicPadding * 2);
     ctx.setLineDash([]);
     
     // Use dynamic padding for click handling
@@ -644,6 +786,30 @@ export function GameEngine({ onGameOver }: GameEngineProps) {
     
     // Draw confetti during celebration
     updateAndDrawConfetti(ctx, canvas);
+    
+    // Draw lasso path when in lasso mode
+    const currentLassoPoints = useGameStore.getState().lassoPoints;
+    if (currentLassoPoints.length > 0) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(currentLassoPoints[0].x, currentLassoPoints[0].y);
+      for (let i = 1; i < currentLassoPoints.length; i++) {
+        ctx.lineTo(currentLassoPoints[i].x, currentLassoPoints[i].y);
+      }
+      ctx.strokeStyle = '#A855F7';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([5, 5]);
+      ctx.stroke();
+      
+      // Draw dots at each point
+      for (const point of currentLassoPoints) {
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#A855F7';
+        ctx.fill();
+      }
+      ctx.restore();
+    }
 
     if (previewPosition && currentFigureId) {
       const sizeMultiplier = 1 + (upgrades.figureSize - 1) * 0.1;
@@ -658,48 +824,6 @@ export function GameEngine({ onGameOver }: GameEngineProps) {
         isPlaced: false,
       };
       drawFigure(ctx, previewFigure, time, true, !isValidPlacement);
-    }
-
-    const previewY = canvas.height - previewHeight;
-    ctx.fillStyle = GAME_CONFIG.COLORS.PREVIEW_AREA;
-    ctx.fillRect(0, previewY, canvas.width, previewHeight);
-    ctx.strokeStyle = '#4ADE80';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(0, previewY, canvas.width, previewHeight);
-
-    ctx.fillStyle = '#4ADE80';
-    ctx.font = '16px "Press Start 2P"';
-    ctx.textAlign = 'center';
-    ctx.fillText('NEXT', canvas.width / 2, previewY + 25);
-
-    if (currentFigureId) {
-      const previewFigure: FigureInstance = {
-        id: 'current-preview',
-        templateId: currentFigureId,
-        x: canvas.width / 2,
-        y: previewY + 70,
-        rotation: 0,
-        scale: 1.2,
-        vibrationOffset: 0,
-        isPlaced: false,
-      };
-      drawFigure(ctx, previewFigure, time);
-    }
-
-    const previewCount = Math.min(upgrades.queueSize, 3, figureQueue.length);
-    for (let i = 0; i < previewCount; i++) {
-      const templateId = figureQueue[i];
-      const queueFigure: FigureInstance = {
-        id: `queue-${i}`,
-        templateId,
-        x: canvas.width - 60,
-        y: previewY + 40 + i * 25,
-        rotation: 0,
-        scale: 0.4,
-        vibrationOffset: i,
-        isPlaced: false,
-      };
-      drawFigure(ctx, queueFigure, time);
     }
 
     animationRef.current = requestAnimationFrame(render);
@@ -717,8 +841,12 @@ export function GameEngine({ onGameOver }: GameEngineProps) {
     const resize = () => {
       const container = canvas.parentElement;
       if (container) {
-        canvas.width = container.clientWidth;
-        canvas.height = container.clientHeight;
+        const { width, height } = calculateCanvasDimensions(container.clientWidth, container.clientHeight);
+        canvas.width = width;
+        canvas.height = height;
+        const scale = getCanvasScaleFactor(width, height);
+        setCanvasScale(scale);
+        useGameStore.getState().setCanvasScale(scale);
       }
     };
 
@@ -738,42 +866,52 @@ export function GameEngine({ onGameOver }: GameEngineProps) {
   }, [upgrades]);
 
   const getDynamicPadding = useCallback(() => {
-    const basePadding = GAME_CONFIG.CANVAS_PADDING;
-    const levelConfig = useGameStore.getState().currentLevelConfig;
-    const currentTime = useGameStore.getState().timeRemaining;
+    const state = useGameStore.getState();
+    const basePadding = GAME_CONFIG.CANVAS_PADDING * state.canvasScale;
+    const levelConfig = state.currentLevelConfig;
+    const currentTime = state.timeRemaining;
     const maxTime = levelConfig.startTime;
     const timeElapsed = maxTime - currentTime;
-    const shrinkAmount = Math.max(0, timeElapsed * levelConfig.areaShrinkRate);
+    const shrinkAmount = Math.max(0, timeElapsed * levelConfig.areaShrinkRate * state.canvasScale);
     return basePadding + shrinkAmount;
   }, []);
 
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
-    if (!canvas || !currentFigureId) return;
+    if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    const previewHeight = 120;
-    if (y > canvas.height - previewHeight) {
+    // Always get fresh state from store to avoid stale closures
+    const state = useGameStore.getState();
+    
+    // If in lasso mode, handle lasso drawing (no figure preview)
+    if (state.isLassoMode) {
       setPreviewPosition(null);
+      if (isDrawingLasso) {
+        state.addLassoPoint(x, y);
+      }
       return;
     }
+
+    if (!currentFigureId) return;
 
     setPreviewPosition({ x, y });
 
     if (currentFigureId !== 'bomb') {
       // Check boundary collision with dynamic padding
       const scale = getScaleForTemplate(currentFigureId);
-      const radius = GAME_CONFIG.FIGURE_BASE_SIZE * scale;
+      const scaledBaseSize = GAME_CONFIG.FIGURE_BASE_SIZE * canvasScale;
+      const radius = scaledBaseSize * scale;
       const padding = getDynamicPadding();
       
       const touchesBoundary = (
         x - radius < padding || 
         x + radius > canvas.width - padding || 
         y - radius < padding || 
-        y + radius > canvas.height - padding - previewHeight
+        y + radius > canvas.height - padding
       );
       
       if (touchesBoundary) {
@@ -795,27 +933,28 @@ export function GameEngine({ onGameOver }: GameEngineProps) {
     } else {
       setIsValidPlacement(true);
     }
-  }, [currentFigureId, findCollidingFigures, getScaleForTemplate, getDynamicPadding]);
+  }, [currentFigureId, findCollidingFigures, getScaleForTemplate, getDynamicPadding, canvasScale, isDrawingLasso]);
 
   const checkBoundaryCollision = useCallback((x: number, y: number, templateId: string, canvas: HTMLCanvasElement) => {
     const scale = getScaleForTemplate(templateId);
-    const radius = GAME_CONFIG.FIGURE_BASE_SIZE * scale;
+    const currentCanvasScale = useGameStore.getState().canvasScale;
+    const scaledBaseSize = GAME_CONFIG.FIGURE_BASE_SIZE * currentCanvasScale;
+    const radius = scaledBaseSize * scale;
     const padding = getDynamicPadding();
-    const previewHeight = 120;
     
     // Check if figure touches or goes outside boundaries (using dynamic shrinking area)
     if (x - radius < padding || 
         x + radius > canvas.width - padding || 
         y - radius < padding || 
-        y + radius > canvas.height - padding - previewHeight) {
+        y + radius > canvas.height - padding) {
       return true;
     }
     return false;
   }, [getScaleForTemplate, getDynamicPadding]);
 
-  const handleClick = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
-    if (!canvas || !currentFigureId) return;
+    if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -830,6 +969,26 @@ export function GameEngine({ onGameOver }: GameEngineProps) {
 
     if (gameOverTriggeredRef.current) return;
     
+    // Check for lasso mode first - start drawing
+    const state = useGameStore.getState();
+    if (state.isLassoMode) {
+      setIsDrawingLasso(true);
+      state.addLassoPoint(x, y);
+      return;
+    }
+    
+    // Check for bomb targeting mode
+    if (state.bombTargetingMode) {
+      const result = useGameStore.getState().detonateBombAt(x, y);
+      if (result.success) {
+        createExplosion(x, y);
+      }
+      return;
+    }
+    
+    // Need a current figure for regular placement
+    if (!currentFigureId) return;
+    
     if (currentFigureId === 'bomb') {
       placeFigure(x, y);
       // Explosion effect for bomb
@@ -838,18 +997,26 @@ export function GameEngine({ onGameOver }: GameEngineProps) {
       // Check boundary collision - figure would touch the border
       const touchesBoundary = checkBoundaryCollision(x, y, currentFigureId, canvas);
       if (touchesBoundary) {
-        gameOverTriggeredRef.current = true;
-        collisionHighlightRef.current = {
-          type: 'boundary',
-          position: { x, y },
-          timestamp: Date.now(),
-        };
-        useGameStore.getState().setNotification('TOUCHED BOUNDARY!');
-        setTimeout(() => {
-          setGameState('GAME_OVER');
-          onGameOver();
-        }, 800);
-        return;
+        const gameState = useGameStore.getState();
+        const hasShield = gameState.upgrades.shield >= 1 && !gameState.shieldUsed;
+        
+        if (hasShield) {
+          useGameStore.getState().useShield();
+          return;
+        } else {
+          gameOverTriggeredRef.current = true;
+          collisionHighlightRef.current = {
+            type: 'boundary',
+            position: { x, y },
+            timestamp: Date.now(),
+          };
+          useGameStore.getState().setNotification('TOUCHED BOUNDARY!');
+          setTimeout(() => {
+            setGameState('GAME_OVER');
+            onGameOver();
+          }, 800);
+          return;
+        }
       }
       
       // Check collision with other figures
@@ -866,18 +1033,26 @@ export function GameEngine({ onGameOver }: GameEngineProps) {
       
       const collidingFigureIds = findCollidingFigures(testFigure);
       if (collidingFigureIds.length > 0) {
-        gameOverTriggeredRef.current = true;
-        collisionHighlightRef.current = {
-          type: 'collision',
-          figureIds: collidingFigureIds,
-          timestamp: Date.now(),
-        };
-        useGameStore.getState().setNotification('COLLISION!');
-        setTimeout(() => {
-          setGameState('GAME_OVER');
-          onGameOver();
-        }, 800);
-        return;
+        const gameState = useGameStore.getState();
+        const hasShield = gameState.upgrades.shield >= 1 && !gameState.shieldUsed;
+        
+        if (hasShield) {
+          useGameStore.getState().useShield();
+          return;
+        } else {
+          gameOverTriggeredRef.current = true;
+          collisionHighlightRef.current = {
+            type: 'collision',
+            figureIds: collidingFigureIds,
+            timestamp: Date.now(),
+          };
+          useGameStore.getState().setNotification('COLLISION!');
+          setTimeout(() => {
+            setGameState('GAME_OVER');
+            onGameOver();
+          }, 800);
+          return;
+        }
       }
       
       placeFigure(x, y);
@@ -890,12 +1065,21 @@ export function GameEngine({ onGameOver }: GameEngineProps) {
     setPreviewPosition(null);
   }, []);
 
+  const handlePointerUp = useCallback(() => {
+    // If we were drawing a lasso, execute it
+    if (isDrawingLasso) {
+      setIsDrawingLasso(false);
+      useGameStore.getState().executeLasso();
+    }
+  }, [isDrawingLasso]);
+
   return (
     <canvas
       ref={canvasRef}
-      className="w-full h-full cursor-crosshair touch-none"
+      className="cursor-crosshair touch-none"
       onPointerMove={handlePointerMove}
-      onPointerDown={handleClick}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerLeave}
       data-testid="game-canvas"
     />
