@@ -1,0 +1,55 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - button "SIGN IN" [ref=e6]:
+      - img [ref=e7]
+      - generic [ref=e10]: SIGN IN
+    - generic [ref=e11]:
+      - generic [ref=e12]:
+        - heading "KIKTERIA" [level=1] [ref=e13]
+        - paragraph [ref=e14]: ★ BACTERIA PUZZLE ★
+      - generic [ref=e19]: 🦠
+      - button "START LEVEL 1" [ref=e20]:
+        - img [ref=e21]
+        - generic [ref=e23]: START LEVEL 1
+      - button "SELECT LEVEL" [ref=e24]:
+        - img [ref=e25]
+        - generic [ref=e27]: SELECT LEVEL
+      - generic [ref=e28]:
+        - button "SHOP" [ref=e29]:
+          - img [ref=e30]
+          - generic [ref=e33]: SHOP
+        - button "RANKS" [ref=e34]:
+          - img [ref=e35]
+          - generic [ref=e41]: RANKS
+      - generic [ref=e42]:
+        - button "STORY" [ref=e43]:
+          - img [ref=e44]
+          - generic [ref=e46]: STORY
+        - button "CODEX" [ref=e47]:
+          - img [ref=e48]
+          - generic [ref=e57]: CODEX
+        - button "ENDLESS" [ref=e58]:
+          - img [ref=e59]
+          - generic [ref=e61]: ENDLESS
+      - generic [ref=e62]:
+        - button "DAILY" [ref=e63]:
+          - img [ref=e64]
+          - generic [ref=e66]: DAILY
+        - button "GOALS" [ref=e67]:
+          - img [ref=e68]
+          - generic [ref=e73]: GOALS
+        - button "BADGES" [ref=e74]:
+          - img [ref=e75]
+          - generic [ref=e78]: BADGES
+      - generic [ref=e79]:
+        - paragraph [ref=e80]: HOW TO PLAY
+        - paragraph [ref=e81]: Click to place bacteria. Don't let them touch!
+      - generic [ref=e82]:
+        - generic [ref=e83]: "HIGH SCORE: 0"
+        - generic [ref=e84]: v8
+  - region "Notifications (F8)":
+    - list
+```
